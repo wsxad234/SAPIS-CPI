@@ -53,12 +53,9 @@
         -->
 
         <!-- ===== 脚本语言限制 ==== -->
-
-        <!--
         <allowed-scripting-languages>
             <allow>groovy</allow>
         </allowed-scripting-languages>
-        -->
 
         <!-- ===== 映射类型限制 ==== -->
 
