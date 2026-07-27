@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, dev]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   cpilint:
     name: CPILint Inspection
@@ -14,6 +18,42 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed IFLOWs
+        id: changes
+        run: |
+          # Determine the diff base
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
+            BASE="HEAD~1"
+          else
+            BASE="4b825dc642cb6eb9a060e54bf899d9a2309f5f7c"  # git empty tree
+          fi
+
+          echo "Diff base: $BASE"
+          CHANGED_FILES=$(git diff --name-only "$BASE" HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Map changed files to their containing IFLOW dirs (directories with META-INF/MANIFEST.MF)
+          IFLOW_DIRS=""
+          for f in $CHANGED_FILES; do
+            DIR=$(dirname "$f")
+            while [ "$DIR" != "." ] && [ "$DIR" != "/" ]; do
+              if [ -f "$DIR/META-INF/MANIFEST.MF" ]; then
+                IFLOW_DIRS="$IFLOW_DIRS $DIR"
+                break
+              fi
+              DIR=$(dirname "$DIR")
+            done
+          done
+
+          IFLOW_DIRS=$(echo "$IFLOW_DIRS" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+          echo "Changed IFLOW directories: $IFLOW_DIRS"
+          echo "dirs=$IFLOW_DIRS" >> $GITHUB_OUTPUT
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -37,30 +77,74 @@ jobs:
 
       - name: Run CPILint
         id: lint
+        continue-on-error: true
         run: |
-          # Detect IFLOW sources: directories containing META-INF/MANIFEST.MF
-          IFLOW_DIRS=$(find . -maxdepth 3 -name "MANIFEST.MF" -path "*/META-INF/*" \
-            -exec dirname {} \; | xargs dirname | sort -u)
+          IFLOW_DIRS="${{ steps.changes.outputs.dirs }}"
 
-          if [ -n "$IFLOW_DIRS" ]; then
-            echo "Found IFLOW directories:"
-            echo "$IFLOW_DIRS"
-            cpilint -rules cpilint-rules.xml -unpacked-files $IFLOW_DIRS -boring -skipvercheck
-          else
-            echo "No IFLOW directories detected by META-INF pattern."
-            echo "Falling back to scanning entire repository as IFLOW source..."
-            cpilint -rules cpilint-rules.xml -directory . -boring -skipvercheck
+          if [ -z "$(echo $IFLOW_DIRS | tr -d ' ')" ]; then
+            echo "No IFLOW directories changed in this commit. Skipping lint."
+            echo "SKIPPED" > cpilint-output.txt
+            echo "EXIT_CODE=0" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
-      - name: Upload CPILint report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpilint-report
-          path: cpilint-report.txt
-          retention-days: 30
+          echo "Inspecting changed IFLOWs: $IFLOW_DIRS"
+          cpilint -rules cpilint-rules.xml -unpacked-files $IFLOW_DIRS -boring -skipvercheck 2>&1 | tee cpilint-output.txt
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
 
-      - name: Report failure
-        if: failure()
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const exitCode = '${{ steps.lint.outputs.EXIT_CODE }}';
+            const passed = exitCode === '0';
+
+            let output = '';
+            try {
+              output = fs.readFileSync('cpilint-output.txt', 'utf8').trim();
+            } catch (e) {
+              output = '(No output captured)';
+            }
+
+            const isSkipped = output.includes('SKIPPED');
+            const shortSha = '${{ github.sha }}'.substring(0, 7);
+            const statusIcon = isSkipped ? '⏭️' : (passed ? '✅' : '❌');
+            const changedDirs = '${{ steps.changes.outputs.dirs }}'.trim();
+
+            let statusText;
+            if (isSkipped) {
+              statusText = 'No IFLOW files changed in this commit. Check skipped.';
+            } else if (passed) {
+              statusText = 'All checks passed, no issues found.';
+            } else {
+              statusText = 'Issues found. Please fix the problems below before merging.';
+            }
+
+            let body = `## ${statusIcon} CPI Lint Check Result\n\n`;
+            body += `**Commit:** \`${shortSha}\`\n`;
+            if (changedDirs) {
+              body += `**Changed IFLOWs:** ${changedDirs}\n`;
+            }
+            body += `**Status:** ${statusText}\n`;
+
+            if (!isSkipped) {
+              body += `\n\`\`\`\n${output || '(empty)'}\n\`\`\``;
+            }
+
+            body += `\n\n> [View workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Fail if issues found
+        if: steps.lint.outputs.EXIT_CODE != '0'
         run: |
-          echo "::error::CPILint found issues. Please review the report in the workflow artifacts and fix the problems before merging."
+          echo "::error::CPILint found issues. See PR comment for details."
+          exit 1
