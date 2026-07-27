@@ -1,0 +1,60 @@
+name: CPI Lint Check
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  cpilint:
+    name: CPILint Inspection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Download and install CPILint
+        run: |
+          curl -sSL -o cpilint.zip "https://cpilint.org/latest"
+          unzip -q cpilint.zip -d cpilint-install
+          chmod +x cpilint-install/bin/cpilint
+          echo "CPILINT_HOME=$PWD/cpilint-install" >> $GITHUB_ENV
+          echo "$PWD/cpilint-install/bin" >> $GITHUB_PATH
+
+      - name: Run CPILint
+        id: lint
+        run: |
+          # Detect IFLOW sources: directories containing META-INF/MANIFEST.MF
+          IFLOW_DIRS=$(find . -maxdepth 3 -name "MANIFEST.MF" -path "*/META-INF/*" \
+            -exec dirname {} \; | xargs dirname | sort -u)
+
+          if [ -n "$IFLOW_DIRS" ]; then
+            echo "Found IFLOW directories:"
+            echo "$IFLOW_DIRS"
+            cpilint -rules cpilint-rules.xml -unpacked-files $IFLOW_DIRS -boring -skipvercheck
+          else
+            echo "No IFLOW directories detected by META-INF pattern."
+            echo "Falling back to scanning entire repository as IFLOW source..."
+            cpilint -rules cpilint-rules.xml -directory . -boring -skipvercheck
+          fi
+
+      - name: Upload CPILint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpilint-report
+          path: cpilint-report.txt
+          retention-days: 30
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::CPILint found issues. Please review the report in the workflow artifacts and fix the problems before merging."
