@@ -23,7 +23,11 @@ jobs:
 
       - name: Download and install CPILint
         run: |
-          curl -sSL -o cpilint.zip "https://cpilint.org/latest"
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/mwittrock/cpilint/releases/latest \
+            | grep "browser_download_url.*cpilint.*\.zip" \
+            | cut -d '"' -f 4)
+          echo "Downloading CPILint from: $DOWNLOAD_URL"
+          curl -sSL -o cpilint.zip "$DOWNLOAD_URL"
           unzip -q cpilint.zip -d cpilint-install
           chmod +x cpilint-install/bin/cpilint
           echo "CPILINT_HOME=$PWD/cpilint-install" >> $GITHUB_ENV
