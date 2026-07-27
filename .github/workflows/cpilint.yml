@@ -7,7 +7,7 @@ on:
     branches: [main, dev]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
@@ -143,8 +143,63 @@ jobs:
               body: body
             });
 
+      - name: Post commit comment
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const exitCode = '${{ steps.lint.outputs.EXIT_CODE }}';
+            const passed = exitCode === '0';
+
+            let output = '';
+            try {
+              output = fs.readFileSync('cpilint-output.txt', 'utf8').trim();
+            } catch (e) {
+              output = '(No output captured)';
+            }
+
+            const isSkipped = output.includes('SKIPPED');
+            const shortSha = '${{ github.sha }}'.substring(0, 7);
+            const statusIcon = isSkipped ? '⏭️' : (passed ? '✅' : '❌');
+            const changedDirs = '${{ steps.changes.outputs.dirs }}'.trim();
+
+            let statusText;
+            if (isSkipped) {
+              statusText = 'No IFLOW files changed in this commit. Check skipped.';
+            } else if (passed) {
+              statusText = 'All checks passed, no issues found.';
+            } else {
+              statusText = 'Issues found. Please fix the problems below.';
+            }
+
+            let body = `## ${statusIcon} CPI Lint Check Result\n\n`;
+            body += `**Commit:** \`${shortSha}\`\n`;
+            if (changedDirs) {
+              body += `**Changed IFLOWs:** ${changedDirs}\n`;
+            }
+            body += `**Status:** ${statusText}\n`;
+
+            if (!isSkipped) {
+              body += `\n\`\`\`\n${output || '(empty)'}\n\`\`\``;
+            }
+
+            body += `\n\n> [View workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`;
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: body
+            });
+
       - name: Fail if issues found
         if: steps.lint.outputs.EXIT_CODE != '0'
         run: |
-          echo "::error::CPILint found issues. See PR comment for details."
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "::error::CPILint found issues. See PR comment for details."
+          else
+            echo "::error::CPILint found issues. Check the workflow run log above for details."
+          fi
           exit 1
