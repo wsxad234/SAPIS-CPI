@@ -2,9 +2,9 @@ name: CPI Lint Check
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, master]
   pull_request:
-    branches: [main, dev]
+    branches: [main, master]
 
 jobs:
   cpilint:
@@ -29,9 +29,11 @@ jobs:
           echo "Downloading CPILint from: $DOWNLOAD_URL"
           curl -sSL -o cpilint.zip "$DOWNLOAD_URL"
           unzip -q cpilint.zip -d cpilint-install
-          chmod +x cpilint-install/bin/cpilint
-          echo "CPILINT_HOME=$PWD/cpilint-install" >> $GITHUB_ENV
-          echo "$PWD/cpilint-install/bin" >> $GITHUB_PATH
+          # ZIP contains a versioned top-level dir; find the actual bin path
+          BIN_DIR=$(find cpilint-install -type f -name cpilint | head -1 | xargs dirname)
+          echo "Found CPILint binary at: $BIN_DIR"
+          chmod +x "$BIN_DIR/cpilint"
+          echo "$BIN_DIR" >> $GITHUB_PATH
 
       - name: Run CPILint
         id: lint
