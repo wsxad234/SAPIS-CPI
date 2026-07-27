@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cpilint>
+    <!--
+        CPILint Rules Configuration
+        根据项目的安全和编码规范，按需启用或调整以下规则。
+        删除对应 XML 元素即可禁用规则，修改子元素可调整具体配置。
+    -->
+
+    <rules>
+        <!-- ===== 安全规则 ===== -->
+
+        <!-- 禁止接收方通道使用明文 HTTP Basic 认证 -->
+        <cleartext-basic-auth-not-allowed/>
+
+        <!-- 禁止未加密的端点（要求所有接收方端点使用 HTTPS） -->
+        <unencrypted-endpoints-not-allowed/>
+
+        <!-- 禁止未加密的 Data Store 写操作 -->
+        <unencrypted-data-store-write-not-allowed/>
+
+        <!-- 禁止发送方通道使用客户端证书认证 -->
+        <client-cert-sender-channel-auth-not-allowed/>
+
+        <!-- 要求 HTTPS 发送方通道启用 CSRF 保护 -->
+        <csrf-protection-required/>
+
+        <!-- ===== 编码规范 ===== -->
+
+        <!-- 要求每个 iFlow 必须有描述 -->
+        <iflow-description-required/>
+
+        <!-- 禁止混合使用 XML 和非 XML 条件的 Router -->
+        <multi-condition-type-routers-not-allowed/>
+
+        <!-- 要求 ProcessDirect 接收方必须有对应的发送方 -->
+        <matching-process-direct-channels-required/>
+
+        <!-- ===== 适配器管控 ==== -->
+        <!-- 如需限制可用的适配器类型，取消注释并按需配置 -->
+
+        <!--
+        <disallowed-receiver-adapters>
+            <disallow>as2</disallow>
+            <disallow>idoc</disallow>
+        </disallowed-receiver-adapters>
+        -->
+
+        <!--
+        <disallowed-sender-adapters>
+            <disallow>as2</disallow>
+            <disallow>idoc</disallow>
+        </disallowed-sender-adapters>
+        -->
+
+        <!-- ===== 脚本语言限制 ==== -->
+
+        <!--
+        <allowed-scripting-languages>
+            <allow>groovy</allow>
+        </allowed-scripting-languages>
+        -->
+
+        <!-- ===== 映射类型限制 ==== -->
+
+        <!--
+        <disallowed-mapping-types>
+            <disallow>xslt-mapping</disallow>
+        </disallowed-mapping-types>
+        -->
+
+        <!-- ===== 重复资源检测 ==== -->
+        <!-- 检测多个 iFlow 中是否存在重复的资源文件 -->
+
+        <!--
+        <duplicate-resources-not-allowed>
+            <resource-type>message-mapping</resource-type>
+            <resource-type>xslt-mapping</resource-type>
+            <resource-type>operation-mapping</resource-type>
+            <resource-type>groovy-script</resource-type>
+            <resource-type>javascript-script</resource-type>
+            <resource-type>java-archive</resource-type>
+            <resource-type>wsdl</resource-type>
+            <resource-type>xml-schema</resource-type>
+        </duplicate-resources-not-allowed>
+        -->
+    </rules>
+
+    <!-- ===== 豁免配置 ==== -->
+    <!-- 对特定 iFlow 免除某项规则，需填写规则 ID、iFlow ID 和原因 -->
+
+    <!--
+    <exemptions>
+        <exemption>
+            <rule-id>UnencryptedEndpointsNotAllowed</rule-id>
+            <iflow-id>your-iflow-id-here</iflow-id>
+            <reason>该 iFlow 仅在内部网络使用，无需 HTTPS</reason>
+        </exemption>
+    </exemptions>
+    -->
+</cpilint>
